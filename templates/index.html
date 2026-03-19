@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>二次関数・方程式グラフ</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-title">グラフ計算機</div>
+
+    <div class="mode-buttons">
+      <button id="btn-equation" class="mode-btn active" onclick="setMode('equation')">
+        <span class="mode-icon">①</span> 2次方程式
+      </button>
+      <button id="btn-function" class="mode-btn" onclick="setMode('function')">
+        <span class="mode-icon">②</span> 2次関数
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div id="graphs-list" class="graphs-list"></div>
+
+    <button class="add-btn" onclick="addGraph()">＋ グラフを追加</button>
+
+    <div class="divider"></div>
+
+    <div class="section-label">塗りつぶし範囲</div>
+    <div id="ranges-list" class="ranges-list"></div>
+    <button class="add-btn" onclick="addRange()">＋ 範囲を追加</button>
+
+    <div class="divider"></div>
+
+    <div id="result-box" class="result-box"></div>
+
+    <div class="drag-hint">
+      ◆ 頂点ドラッグ → 放物線を移動<br>
+      ○ ハンドルドラッグ → 傾きを変更<br>
+      スクロール → ズーム &nbsp;｜&nbsp; ドラッグ → パン
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="graph"></div>
+  </main>
+
+  <script>
+    let mode = 'equation';
+    let graphs = [];
+    let nextId = 0;
+    let activeGraphId = null;
+
+    const COLORS = ['#4a90e2', '#e2534a', '#27ae60', '#f39c12', '#8e44ad', '#16a085', '#c0392b'];
+
+    // ── 塗りつぶし範囲 ───────────────────────────────────────────────────────
+    let ranges = [];
+    let nextRangeId = 0;
+
+    function addRange() {
+      ranges.push({ id: nextRangeId++, x1: 0, x2: 2, color: '#ff4444' });
+      renderRanges();
+      renderPlot();
+    }
+
+    function removeRange(id) {
+      ranges = ranges.filter(r => r.id !== id);
+      renderRanges();
+      renderPlot();
+    }
+
+    function updateRange(id, key, value) {
+      const r = ranges.find(r => r.id === id);
+      if (!r) return;
+      r[key] = key === 'color' ? value : parseFloat(value) || 0;
+      renderPlot();
+    }
+
+    function renderRanges() {
+      const container = document.getElementById('ranges-list');
+      container.innerHTML = '';
+      ranges.forEach(r => {
+        const item = document.createElement('div');
+        item.className = 'range-item';
+        item.innerHTML = `
+          <input type="color" value="${r.color}" title="色"
+                 oninput="updateRange(${r.id},'color',this.value)">
+          <div class="inp-sm"><label>x₁</label>
+            <input type="number" value="${r.x1}" step="any"
+                   oninput="updateRange(${r.id},'x1',this.value)"></div>
+          <div class="inp-sm"><label>x₂</label>
+            <input type="number" value="${r.x2}" step="any"
+                   oninput="updateRange(${r.id},'x2',this.value)"></div>
+          <button class="remove-btn" title="削除">×</button>
+        `;
+        item.querySelector('.remove-btn').addEventListener('click', () => removeRange(r.id));
+        container.appendChild(item);
+      });
+    }
+
+    // ── Mode ────────────────────────────────────────────────────────────────
+    function setMode(m) {
+      mode = m;
+      document.getElementById('btn-equation').classList.toggle('active', m === 'equation');
+      document.getElementById('btn-function').classList.toggle('active', m === 'function');
+      refreshAllFormulas();
+      updateResultBox();
+      renderPlot();
+    }
+
+    // ── Graph list management ────────────────────────────────────────────────
+    function addGraph() {
+      const id = nextId++;
+      const color = COLORS[graphs.length % COLORS.length];
+      graphs.push({ id, a: 1, b: 0, c: 0, color, inputMode: 'standard' });
+      activeGraphId = id;
+      renderSidebar();
+      updateResultBox();
+      renderPlot(true);
+    }
+
+    function removeGraph(id) {
+      graphs = graphs.filter(g => g.id !== id);
+      if (activeGraphId === id) {
+        activeGraphId = graphs.length > 0 ? graphs[graphs.length - 1].id : null;
+      }
+      renderSidebar();
+      updateResultBox();
+      renderPlot(true);
+    }
+
+    function setActive(id) {
+      activeGraphId = id;
+      document.querySelectorAll('.graph-card').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.id) === id);
+      });
+      updateResultBox();
+      renderPlot();
+    }
+
+    function getGraph(id) {
+      return graphs.find(g => g.id === id);
+    }
+
+    // ── Formula display ──────────────────────────────────────────────────────
+    function fmtV(v) {
+      // Round to 2 decimal places for display
+      return Math.round(v * 100) / 100;
+    }
+
+    function getFormula(g) {
+      if (g.inputMode === 'vertex') {
+        const a = fmtV(g.a);
+        const p = fmtV(-g.b / (2 * g.a));
+        const q = fmtV(g.a * p * p + g.b * p + g.c);
+        const aStr = a === 1 ? '' : a === -1 ? '-' : `${a}`;
+        const xPart = p === 0 ? 'x²' : p > 0 ? `(x-${p})²` : `(x+${-p})²`;
+        let expr = aStr + xPart;
+        if (q > 0) expr += `+${q}`;
+        else if (q < 0) expr += `${q}`;
+        return mode === 'equation' ? `${expr} = 0` : `y = ${expr}`;
+      }
+      const a = fmtV(g.a), b = fmtV(g.b), c = fmtV(g.c);
+      const terms = [];
+      if (a === 1) terms.push('x²');
+      else if (a === -1) terms.push('-x²');
+      else terms.push(`${a}x²`);
+      if (b !== 0) {
+        if (b === 1) terms.push('+x');
+        else if (b === -1) terms.push('-x');
+        else if (b > 0) terms.push(`+${b}x`);
+        else terms.push(`${b}x`);
+      }
+      if (c !== 0) {
+        if (c > 0) terms.push(`+${c}`);
+        else terms.push(`${c}`);
+      }
+      const expr = terms.join('');
+      return mode === 'equation' ? `${expr} = 0` : `y = ${expr}`;
+    }
+
+    function toggleInputMode(id) {
+      const g = getGraph(id);
+      if (!g) return;
+      g.inputMode = g.inputMode === 'standard' ? 'vertex' : 'standard';
+      renderSidebar();
+    }
+
+    function refreshAllFormulas() {
+      graphs.forEach(g => {
+        const el = document.querySelector(`.card-formula[data-id="${g.id}"]`);
+        if (el) el.textContent = getFormula(g);
+      });
+    }
+
+    // ── Sidebar rendering ────────────────────────────────────────────────────
+    function renderSidebar() {
+      const container = document.getElementById('graphs-list');
+      container.innerHTML = '';
+      graphs.forEach(g => {
+        const isActive = g.id === activeGraphId;
+        const card = document.createElement('div');
+        card.className = 'graph-card' + (isActive ? ' active' : '');
+        card.dataset.id = g.id;
+        card.style.setProperty('--card-color', g.color);
+
+        card.addEventListener('click', (e) => {
+          if (!e.target.closest('.remove-btn') && !e.target.closest('input')
+              && !e.target.closest('.form-toggle')) {
+            setActive(g.id);
+          }
+        });
+
+        const isVertex = g.inputMode === 'vertex';
+        const p = fmtV(-g.b / (2 * g.a));
+        const q = fmtV(g.a * p * p + g.b * p + g.c);
+        const inp2nd = isVertex
+          ? `<div class="inp-sm"><label>p</label>
+               <input type="number" value="${p}" step="any"
+                      oninput="onCoeffInput(${g.id},'p',this.value)"></div>
+             <div class="inp-sm"><label>q</label>
+               <input type="number" value="${q}" step="any"
+                      oninput="onCoeffInput(${g.id},'q',this.value)"></div>`
+          : `<div class="inp-sm"><label>b</label>
+               <input type="number" value="${g.b}" step="any"
+                      oninput="onCoeffInput(${g.id},'b',this.value)"></div>
+             <div class="inp-sm"><label>c</label>
+               <input type="number" value="${g.c}" step="any"
+                      oninput="onCoeffInput(${g.id},'c',this.value)"></div>`;
+
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="card-dot" style="background:${g.color}"></span>
+            <span class="card-formula" data-id="${g.id}" style="color:${g.color}">${getFormula(g)}</span>
+            <button class="form-toggle" onclick="toggleInputMode(${g.id})" title="入力形式を切替">
+              ${isVertex ? 'a(x-p)²' : 'ax²'}
+            </button>
+            <button class="remove-btn" title="削除">×</button>
+          </div>
+          <div class="card-inputs">
+            <div class="inp-sm"><label>a</label>
+              <input type="number" value="${g.a}" step="any"
+                     oninput="onCoeffInput(${g.id},'a',this.value)"></div>
+            ${inp2nd}
+          </div>
+        `;
+        card.querySelector('.remove-btn').addEventListener('click', () => removeGraph(g.id));
+        container.appendChild(card);
+      });
+    }
+
+    function onCoeffInput(id, key, value) {
+      const g = getGraph(id);
+      if (!g) return;
+      const v = parseFloat(value);
+      if (isNaN(v)) return;
+
+      if (g.inputMode === 'vertex' && (key === 'p' || key === 'q')) {
+        // 頂点形: p, q → b, c に変換
+        const curP = -g.b / (2 * g.a);
+        const curQ = g.a * curP * curP + g.b * curP + g.c;
+        const p = key === 'p' ? v : curP;
+        const q = key === 'q' ? v : curQ;
+        g.b = -2 * g.a * p;
+        g.c = g.a * p * p + q;
+      } else {
+        g[key] = v;
+      }
+
+      const el = document.querySelector(`.card-formula[data-id="${id}"]`);
+      if (el) el.textContent = getFormula(g);
+      if (id === activeGraphId) updateResultBox();
+      renderPlot();
+    }
+
+    // ── Result box ───────────────────────────────────────────────────────────
+    function fmt(n, d = 4) { return parseFloat(n.toFixed(d)); }
+
+    function row(label, val) {
+      return `<div class="res-row"><span class="res-label">${label}</span><span class="res-val">${val}</span></div>`;
+    }
+
+    function updateResultBox() {
+      const g = getGraph(activeGraphId);
+      const box = document.getElementById('result-box');
+      if (!g) { box.innerHTML = ''; return; }
+      const { a, b, c } = g;
+      if (!a || a === 0) {
+        box.innerHTML = '<span class="warn">a ≠ 0 を入力してください</span>';
+        return;
+      }
+      const vx = -b / (2 * a);
+      const vy = a * vx * vx + b * vx + c;
+      const D = b * b - 4 * a * c;
+      let html = '';
+      if (mode === 'equation') {
+        html += row('判別式 D', fmt(D, 3));
+        if (D > 0) {
+          const x1 = (-b + Math.sqrt(D)) / (2 * a);
+          const x2 = (-b - Math.sqrt(D)) / (2 * a);
+          html += row('x₁', fmt(x1)); html += row('x₂', fmt(x2));
+        } else if (D === 0) {
+          html += row('重解 x', fmt(-b / (2 * a)));
+        } else {
+          html += row('虚数解', `${fmt(-b / (2 * a))} ± ${fmt(Math.sqrt(-D) / (2 * a))}i`);
+        }
+      } else {
+        html += row('頂点 x', fmt(vx));
+        html += row('頂点 y', fmt(vy));
+        html += row('軸', `x = ${fmt(vx)}`);
+        html += row('開き方', a > 0 ? '上に凸（a>0）' : '下に凸（a<0）');
+      }
+      box.innerHTML = html;
+    }
+
+    // ── Plotly rendering ─────────────────────────────────────────────────────
+    const basePlotLayout = {
+      xaxis: { zeroline: true, zerolinewidth: 1.5, zerolinecolor: '#aaa', gridcolor: '#eee' },
+      yaxis: { zeroline: true, zerolinewidth: 1.5, zerolinecolor: '#aaa', gridcolor: '#eee',
+               scaleanchor: 'x', scaleratio: 1 },
+      margin: { t: 20, r: 20, b: 45, l: 50 },
+      paper_bgcolor: '#fff',
+      plot_bgcolor: '#fff',
+      legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(255,255,255,0.85)', bordercolor: '#ddd', borderwidth: 1 },
+      dragmode: 'pan'
+    };
+
+    function buildTraces() {
+      const traces = [];
+      graphs.forEach(g => {
+        const { a, b, c, color, id } = g;
+        if (!a || a === 0) return;
+        const isActive = id === activeGraphId;
+        const vx = -b / (2 * a);
+        const vy = a * vx * vx + b * vx + c;
+        // 表示中の x レンジより広めに描画（未初期化時は±20）
+        const fl = document.getElementById('graph')._fullLayout;
+        const xRange = fl && fl.xaxis && fl.xaxis.range ? fl.xaxis.range : [-20, 20];
+        const margin = Math.abs(xRange[1] - xRange[0]) * 0.5;
+        const xMin = Math.min(xRange[0] - margin, vx - 5);
+        const xMax = Math.max(xRange[1] + margin, vx + 5);
+        const step = Math.max((xMax - xMin) / 600, 0.001);
+        const xs = [];
+        for (let x = xMin; x <= xMax; x += step) xs.push(x);
+        const ys = xs.map(x => a * x * x + b * x + c);
+
+        // Main curve
+        traces.push({
+          x: xs, y: ys, type: 'scatter', mode: 'lines',
+          name: getFormula(g),
+          line: { color, width: isActive ? 3 : 2 },
+          hoverinfo: 'x+y'
+        });
+
+        // Vertex marker (diamond) — draggable: moves the parabola
+        traces.push({
+          x: [vx], y: [vy], type: 'scatter', mode: 'markers',
+          showlegend: false,
+          marker: { color, size: isActive ? 14 : 10, symbol: 'diamond',
+                    line: { color: '#fff', width: 2 } },
+          hovertemplate: `◆ 頂点 (${fmt(vx)}, ${fmt(vy)})<br>ドラッグで移動<extra></extra>`
+        });
+
+        // Scale handle (open circle at vx+2) — draggable: changes steepness
+        const hx = vx + 2;
+        const hy = a * hx * hx + b * hx + c;
+        traces.push({
+          x: [hx], y: [hy], type: 'scatter', mode: 'markers',
+          showlegend: false,
+          marker: { color: '#fff', size: isActive ? 13 : 9, symbol: 'circle',
+                    line: { color, width: 2.5 } },
+          hovertemplate: `○ 傾きハンドル<br>ドラッグで傾き変更<extra></extra>`
+        });
+
+        // Root markers (equation mode)
+        if (mode === 'equation') {
+          const D = b * b - 4 * a * c;
+          if (D >= 0) {
+            const sqD = Math.sqrt(D);
+            const roots = D === 0
+              ? [(-b) / (2 * a)]
+              : [(-b + sqD) / (2 * a), (-b - sqD) / (2 * a)];
+            traces.push({
+              x: roots, y: roots.map(() => 0), type: 'scatter', mode: 'markers',
+              showlegend: false,
+              marker: { color, size: 9, symbol: 'circle', line: { color: '#fff', width: 2 } },
+              hoverinfo: 'x'
+            });
+          }
+        }
+      });
+      return traces;
+    }
+
+    // 目盛間隔を「見た目が正方形マス」になるよう計算
+    function niceDtick(span) {
+      if (!span || span <= 0) return 1;
+      const raw = span / 15;
+      const exp = Math.floor(Math.log10(raw));
+      const mag = Math.pow(10, exp);
+      const frac = raw / mag;
+      const nice = frac < 1.5 ? 1 : frac < 3.5 ? 2 : frac < 7.5 ? 5 : 10;
+      return nice * mag;
+    }
+
+    function renderPlot(forceAutoRange = false) {
+      const gd = document.getElementById('graph');
+      const ly = JSON.parse(JSON.stringify(basePlotLayout));
+      if (!forceAutoRange && gd._fullLayout && gd._fullLayout.xaxis && gd._fullLayout.xaxis.range) {
+        const xRange = gd._fullLayout.xaxis.range.slice();
+        const yRange = gd._fullLayout.yaxis.range.slice();
+        ly.xaxis.range = xRange;
+        ly.yaxis.range = yRange;
+        // 両軸に同じ dtick → グリッドが正方形マスになる
+        const dt = niceDtick(Math.max(
+          Math.abs(xRange[1] - xRange[0]),
+          Math.abs(yRange[1] - yRange[0])
+        ));
+        ly.xaxis.dtick = dt;
+        ly.yaxis.dtick = dt;
+      }
+      // 塗りつぶし範囲を shapes に変換
+      ly.shapes = ranges.map(r => ({
+        type: 'rect',
+        xref: 'x', yref: 'paper',
+        x0: Math.min(r.x1, r.x2), x1: Math.max(r.x1, r.x2),
+        y0: 0, y1: 1,
+        fillcolor: r.color,
+        opacity: 0.15,
+        line: { width: 0 }
+      }));
+      Plotly.react('graph', buildTraces(), ly, { responsive: true, scrollZoom: true });
+    }
+
+    // ── Interactive drag ─────────────────────────────────────────────────────
+    let dragState = null;
+    const graphDiv = document.getElementById('graph');
+
+    function eventToData(event) {
+      const fl = graphDiv._fullLayout;
+      if (!fl || !fl.xaxis || !fl.yaxis) return null;
+      const rect = graphDiv.getBoundingClientRect();
+      const px = event.clientX - rect.left - fl.margin.l;
+      const py = event.clientY - rect.top - fl.margin.t;
+      return { x: fl.xaxis.p2d(px), y: fl.yaxis.p2d(py) };
+    }
+
+    function dataToPixel(dx, dy) {
+      const fl = graphDiv._fullLayout;
+      if (!fl || !fl.xaxis || !fl.yaxis) return null;
+      return {
+        px: fl.xaxis.d2p(dx) + fl.margin.l,
+        py: fl.yaxis.d2p(dy) + fl.margin.t
+      };
+    }
+
+    // Capture phase: run before Plotly's own handlers
+    graphDiv.addEventListener('mousedown', function(event) {
+      if (event.button !== 0) return;
+      const fl = graphDiv._fullLayout;
+      if (!fl) return;
+
+      const rect = graphDiv.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+
+      let best = null;
+      let bestDist = 22; // pixel threshold
+
+      graphs.forEach(g => {
+        const { a, b, c, id } = g;
+        if (!a || a === 0) return;
+        const vx = -b / (2 * a);
+        const vy = a * vx * vx + b * vx + c;
+
+        // Vertex
+        const vPx = dataToPixel(vx, vy);
+        if (vPx) {
+          const d = Math.hypot(mouseX - vPx.px, mouseY - vPx.py);
+          if (d < bestDist) { bestDist = d; best = { graphId: id, type: 'vertex' }; }
+        }
+
+        // Scale handle
+        const hx = vx + 2;
+        const hy = a * hx * hx + b * hx + c;
+        const hPx = dataToPixel(hx, hy);
+        if (hPx) {
+          const d = Math.hypot(mouseX - hPx.px, mouseY - hPx.py);
+          if (d < bestDist) { bestDist = d; best = { graphId: id, type: 'scale' }; }
+        }
+      });
+
+      if (best) {
+        const g = getGraph(best.graphId);
+        const vx = -g.b / (2 * g.a);
+        const vy = g.a * vx * vx + g.b * vx + g.c;
+        dragState = {
+          graphId: best.graphId,
+          type: best.type,
+          origA: g.a, origB: g.b, origC: g.c,
+          origVx: vx, origVy: vy
+        };
+        setActive(best.graphId);
+        event.preventDefault();
+        event.stopPropagation();
+        document.body.style.userSelect = 'none';
+        graphDiv.style.cursor = 'grabbing';
+      }
+    }, true); // capture phase
+
+    document.addEventListener('mousemove', function(event) {
+      if (!dragState) {
+        updateHoverCursor(event);
+        return;
+      }
+      const coords = eventToData(event);
+      if (!coords) return;
+      const g = getGraph(dragState.graphId);
+      if (!g) return;
+
+      const round4 = v => Math.round(v * 1e4) / 1e4;
+
+      if (dragState.type === 'vertex') {
+        // Keep a fixed; move vertex to (coords.x, coords.y)
+        // b = -2a*vx_new,  c = a*vx_new² + vy_new
+        const a = dragState.origA;
+        g.b = round4(-2 * a * coords.x);
+        g.c = round4(a * coords.x * coords.x + coords.y);
+      } else {
+        // Scale handle is at (origVx+2, origVy+4a)
+        // Drag to new y → new_a = (y - origVy) / 4
+        // Keep vertex at (origVx, origVy)
+        let new_a = (coords.y - dragState.origVy) / 4;
+        if (Math.abs(new_a) < 0.01) new_a = new_a >= 0 ? 0.01 : -0.01;
+        g.a = round4(new_a);
+        g.b = round4(-2 * g.a * dragState.origVx);
+        g.c = round4(g.a * dragState.origVx * dragState.origVx + dragState.origVy);
+      }
+
+      updateInputFields(g);
+      const el = document.querySelector(`.card-formula[data-id="${g.id}"]`);
+      if (el) el.textContent = getFormula(g);
+      updateResultBox();
+      renderPlot(); // preserve current zoom/pan
+    });
+
+    document.addEventListener('mouseup', function() {
+      if (dragState) {
+        dragState = null;
+        document.body.style.userSelect = '';
+        graphDiv.style.cursor = '';
+      }
+    });
+
+    function updateInputFields(g) {
+      const card = document.querySelector(`.graph-card[data-id="${g.id}"]`);
+      if (!card) return;
+      const inputs = card.querySelectorAll('input[type="number"]');
+      const r = v => Math.round(v * 1e4) / 1e4;
+      if (inputs[0]) inputs[0].value = r(g.a);
+      if (g.inputMode === 'vertex') {
+        const p = -g.b / (2 * g.a);
+        const q = g.a * p * p + g.b * p + g.c;
+        if (inputs[1]) inputs[1].value = r(p);
+        if (inputs[2]) inputs[2].value = r(q);
+      } else {
+        if (inputs[1]) inputs[1].value = r(g.b);
+        if (inputs[2]) inputs[2].value = r(g.c);
+      }
+    }
+
+    function updateHoverCursor(event) {
+      if (!graphDiv._fullLayout) return;
+      const rect = graphDiv.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+      let near = false;
+      graphs.forEach(g => {
+        if (!g.a || g.a === 0) return;
+        const vx = -g.b / (2 * g.a);
+        const vy = g.a * vx * vx + g.b * vx + g.c;
+        const vPx = dataToPixel(vx, vy);
+        if (vPx && Math.hypot(mouseX - vPx.px, mouseY - vPx.py) < 22) near = true;
+        const hx = vx + 2;
+        const hy = g.a * hx * hx + g.b * hx + g.c;
+        const hPx = dataToPixel(hx, hy);
+        if (hPx && Math.hypot(mouseX - hPx.px, mouseY - hPx.py) < 22) near = true;
+      });
+      graphDiv.style.cursor = near ? 'grab' : '';
+    }
+
+    // ── ズーム/パン後に dtick を同期して正方形グリッドを維持 ────────────────────
+    let dtickSyncing = false;
+    graphDiv.on('plotly_relayout', function(ed) {
+      if (dtickSyncing) return;
+      // range 変化（ズーム/パン）のときだけ同期
+      const isRangeChange = 'xaxis.range[0]' in ed || 'yaxis.range[0]' in ed
+                         || 'xaxis.autorange' in ed || 'yaxis.autorange' in ed;
+      if (!isRangeChange) return;
+      const fl = graphDiv._fullLayout;
+      if (!fl || !fl.xaxis || !fl.xaxis.range) return;
+      const dt = niceDtick(Math.max(
+        Math.abs(fl.xaxis.range[1] - fl.xaxis.range[0]),
+        Math.abs(fl.yaxis.range[1] - fl.yaxis.range[0])
+      ));
+      if (fl.xaxis.dtick === dt && fl.yaxis.dtick === dt) return;
+      dtickSyncing = true;
+      Plotly.relayout('graph', { 'xaxis.dtick': dt, 'yaxis.dtick': dt })
+        .finally(() => { dtickSyncing = false; });
+    });
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    addGraph();
+  </script>
+</body>
+</html>
