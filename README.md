@@ -61,3 +61,12 @@ chartQF/
 ## License
 
 This project does not currently specify a license. All rights reserved unless otherwise stated.
+## Thoughts
+
+As soon as I finished building this web application, I found it very rewarding because I was suddenly able to fully grasp, through self-study, how to find the maximum and minimum values of quadratic functions within a specific range.
+
+## Planned for implementation
+
+1 English support
+2 mobile support(iOS,Swift)
+3 firebase setting(Not yet)
