@@ -1,4 +1,5 @@
 # chartQF
+![DD2A7D1F-053C-4636-8E1F-3CC723FF3DB4_1_201_a](https://github.com/user-attachments/assets/9c2fed32-bdcf-4f05-99d5-dc2d07ad949c)
 
 An interactive web application for visualizing quadratic functions and equations as graphs. Users can input coefficients, manipulate curves through direct dragging, and overlay colored fill regions on the plot.
 
