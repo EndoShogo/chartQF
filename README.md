@@ -3,7 +3,7 @@
 
 An interactive web application for visualizing quadratic functions and equations as graphs. Users can input coefficients, manipulate curves through direct dragging, and overlay colored fill regions on the plot.
 
-## Features
+## Features🤓
 
 - Plot one or more quadratic curves simultaneously, each with an independent color
 - Switch between quadratic function mode (y = ax^2 + bx + c) and quadratic equation mode (ax^2 + bx + c = 0)
@@ -61,7 +61,7 @@ chartQF/
 ## License
 
 This project does not currently specify a license. All rights reserved unless otherwise stated.
-## Thoughts
+## Thoughts🤔
 
 As soon as I finished building this web application, I found it very rewarding because I was suddenly able to fully grasp, through self-study, how to find the maximum and minimum values of quadratic functions within a specific range.
 
@@ -69,4 +69,5 @@ As soon as I finished building this web application, I found it very rewarding b
 
 1 English support
 2 mobile support(iOS,Swift)
-3 firebase setting(Not yet)
+3 firebase setting(If you need to log in)
+4 Support calculus(Probably in a year)
