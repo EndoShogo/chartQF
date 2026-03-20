@@ -59,7 +59,21 @@
     let nextRangeId = 0;
 
     function addRange() {
-      ranges.push({ id: nextRangeId++, x1: 0, x2: 2, color: '#ff4444' });
+      const fl = document.getElementById('graph')._fullLayout;
+      const xRange = fl && fl.xaxis && fl.xaxis.range ? fl.xaxis.range : [-10, 10];
+      const yRange = fl && fl.yaxis && fl.yaxis.range ? fl.yaxis.range : [-10, 10];
+      const xMid = (xRange[0] + xRange[1]) / 2;
+      const xHalf = (xRange[1] - xRange[0]) * 0.25;
+      const yMid = (yRange[0] + yRange[1]) / 2;
+      const yHalf = (yRange[1] - yRange[0]) * 0.25;
+      ranges.push({
+        id: nextRangeId++,
+        x1: Math.round((xMid - xHalf) * 100) / 100,
+        x2: Math.round((xMid + xHalf) * 100) / 100,
+        y1: Math.round((yMid - yHalf) * 100) / 100,
+        y2: Math.round((yMid + yHalf) * 100) / 100,
+        color: '#ff4444'
+      });
       renderRanges();
       renderPlot();
     }
@@ -73,7 +87,12 @@
     function updateRange(id, key, value) {
       const r = ranges.find(r => r.id === id);
       if (!r) return;
-      r[key] = key === 'color' ? value : parseFloat(value) || 0;
+      if (key === 'color') {
+        r[key] = value;
+      } else {
+        const parsed = parseFloat(value);
+        if (!isNaN(parsed)) r[key] = parsed;
+      }
       renderPlot();
     }
 
@@ -92,6 +111,12 @@
           <div class="inp-sm"><label>x₂</label>
             <input type="number" value="${r.x2}" step="any"
                    oninput="updateRange(${r.id},'x2',this.value)"></div>
+          <div class="inp-sm"><label>y₁</label>
+            <input type="number" value="${r.y1}" step="any"
+                   oninput="updateRange(${r.id},'y1',this.value)"></div>
+          <div class="inp-sm"><label>y₂</label>
+            <input type="number" value="${r.y2}" step="any"
+                   oninput="updateRange(${r.id},'y2',this.value)"></div>
           <button class="remove-btn" title="削除">×</button>
         `;
         item.querySelector('.remove-btn').addEventListener('click', () => removeRange(r.id));
@@ -423,9 +448,9 @@
       // 塗りつぶし範囲を shapes に変換
       ly.shapes = ranges.map(r => ({
         type: 'rect',
-        xref: 'x', yref: 'paper',
+        xref: 'x', yref: 'y',
         x0: Math.min(r.x1, r.x2), x1: Math.max(r.x1, r.x2),
-        y0: 0, y1: 1,
+        y0: Math.min(r.y1, r.y2), y1: Math.max(r.y1, r.y2),
         fillcolor: r.color,
         opacity: 0.15,
         line: { width: 0 }
@@ -444,6 +469,15 @@
       const px = event.clientX - rect.left - fl.margin.l;
       const py = event.clientY - rect.top - fl.margin.t;
       return { x: fl.xaxis.p2d(px), y: fl.yaxis.p2d(py) };
+    }
+
+    function getSnapThreshold(snapPx = 12) {
+      const fl = graphDiv._fullLayout;
+      if (!fl || !fl.xaxis || !fl.yaxis) return { x: 0.5, y: 0.5 };
+      return {
+        x: Math.abs(fl.xaxis.p2d(snapPx) - fl.xaxis.p2d(0)),
+        y: Math.abs(fl.yaxis.p2d(snapPx) - fl.yaxis.p2d(0))
+      };
     }
 
     function dataToPixel(dx, dy) {
@@ -524,9 +558,22 @@
       if (dragState.type === 'vertex') {
         // Keep a fixed; move vertex to (coords.x, coords.y)
         // b = -2a*vx_new,  c = a*vx_new² + vy_new
+        const snap = getSnapThreshold(12);     // 0 へのスナップ（強）
+        const weakSnap = getSnapThreshold(8);  // 目盛りへのスナップ（弱）
+        const fl2 = graphDiv._fullLayout;
+        const xDt = fl2 && fl2.xaxis && fl2.xaxis.dtick ? fl2.xaxis.dtick : 1;
+        const yDt = fl2 && fl2.yaxis && fl2.yaxis.dtick ? fl2.yaxis.dtick : 1;
+        const snapAxis = (val, strongThresh, weakThresh, dt) => {
+          if (Math.abs(val) <= strongThresh) return 0;
+          const nearest = Math.round(val / dt) * dt;
+          if (Math.abs(val - nearest) <= weakThresh) return nearest;
+          return val;
+        };
+        const snappedX = snapAxis(coords.x, snap.x, weakSnap.x, xDt);
+        const snappedY = snapAxis(coords.y, snap.y, weakSnap.y, yDt);
         const a = dragState.origA;
-        g.b = round4(-2 * a * coords.x);
-        g.c = round4(a * coords.x * coords.x + coords.y);
+        g.b = round4(-2 * a * snappedX);
+        g.c = round4(a * snappedX * snappedX + snappedY);
       } else {
         // Scale handle is at (origVx+2, origVy+4a)
         // Drag to new y → new_a = (y - origVy) / 4
